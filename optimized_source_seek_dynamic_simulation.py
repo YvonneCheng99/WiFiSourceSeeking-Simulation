@@ -28,7 +28,6 @@ rssi_distribution_list = []  # 所有点对应的信号强度值的list
 coordinate = queue.Queue()  # 坐标和时间队列，作为高斯过程的输入
 rssi_value = queue.Queue()  # 信号强度值队列，与坐标和时间队列为一一对应的关系
 times_threshold_value = pm.time_to_target  # 两个阶段划分的阈值
-csv_name = 'optimized_simulation_13.csv'
 
 
 def init_rssi():
@@ -117,11 +116,20 @@ def get_max_point(time_track):
         return test_X[max_index], max_mu, Kff_inv, mu, cov
 
 
-def track():
+def track(csv_index):
+    csv_name = 'opti_simulation_data_6/opti_simulation_'+str(csv_index)+'.csv'
     index = 0
     time_track = 0
     global track_point, source_point, coordinate, rssi_value
+    source_point = [-2.5, -2.5]
+    track_point = [0.0, 0.0]
+    coordinate = queue.Queue()
+    rssi_value = queue.Queue()
+    print(coordinate.qsize())
     distance = 12.5
+    print('start-------------------------')
+    print('track_point', end='')
+    print(track_point)
     while (1):
         if index < 3:
             # 随机运动三次
@@ -131,12 +139,12 @@ def track():
             time_track += random_distance / v_track  # 增加时间
             # 移动
             # 模拟移动,出界向反方向移动
-            if track_point[0] + random_x > 2.5 or track_point[0] + random_x < -2.5:
+            if track_point[0] + random_x >= 2.5 or track_point[0] + random_x <= -2.5:
                 track_point[0] = track_point[0] - random_x
             else:
                 track_point[0] = track_point[0] + random_x
 
-            if track_point[1] + random_y > 2.5 or track_point[1] + random_y < -2.5:
+            if track_point[1] + random_y >= 2.5 or track_point[1] + random_y <= -2.5:
                 track_point[1] = track_point[1] - random_y
             else:
                 track_point[1] = track_point[1] + random_y
@@ -148,7 +156,9 @@ def track():
             # 记录数据
             x = track_point[0]
             y = track_point[1]
-            df = pd.DataFrame({"coordinate": [track_point], "t": time_track, "rssi": rssi})
+            # df = pd.DataFrame({"coordinate": [track_point], "t": time_track, "rssi": rssi})
+            df = pd.DataFrame(
+                {"coordinate": [track_point], "max_rssi_pos": [track_point], "t": time_track, "rssi": rssi})
             df.to_csv(csv_name, mode='a', index=None, header=None)
             # 判断是否追踪到
             distance_x_this = abs(source_point[0] - track_point[0])
@@ -162,6 +172,8 @@ def track():
         else:
 
             if time_track > 50:
+                df = pd.DataFrame({"file_index": [csv_index], "fly_times": [index], "time_spent": time_track})
+                df.to_csv('opti_times_6.csv', mode='a', index=None, header=None)
                 print("track failed.")
                 return
 
@@ -173,6 +185,7 @@ def track():
             time_track += d / v_track
             # 高斯过程
             max_cordinate_predicted, max_rssi_predicted, kff_inv, mu, cov = get_max_point(time_track)
+            max_angle = calculate_angle(track_point[0], track_point[1], max_cordinate_predicted[0], max_cordinate_predicted[1])
             '''
             ad = ads.ADS(list(coordinate.queue), list(rssi_value.queue))
             next_pos = ad.next_step(index, track_point, kff_inv, time_track, list(coordinate.queue), list(rssi_value.queue), mu, cov)
@@ -183,7 +196,8 @@ def track():
             '''
             if index < times_threshold_value:
                 ad = ads.ADS(list(coordinate.queue), list(rssi_value.queue))
-                next_pos = ad.next_step(index, track_point, kff_inv, time_track, list(coordinate.queue), list(rssi_value.queue), mu, cov, distance_1)
+                next_pos = ad.next_step(index, track_point, kff_inv, time_track, list(coordinate.queue),
+                                        list(rssi_value.queue), mu, cov, distance_1, max_angle)
                 print('next_pos', end='')
                 print(next_pos)
                 track_point[0] = next_pos[0]
@@ -217,13 +231,16 @@ def track():
             coordinate.put([track_point[0], track_point[1], time_track])
             rssi_value.put(rssi)
             # 记录数据
-            df = pd.DataFrame({"coordinate": [track_point], "t": time_track, "rssi": rssi})
+            df = pd.DataFrame({"coordinate": [track_point], "max_rssi_pos": [max_cordinate_predicted], "t": time_track, "rssi": rssi})
+            # df = pd.DataFrame({"coordinate": [track_point], "t": time_track, "rssi": rssi})
             df.to_csv(csv_name, mode='a', index=None, header=None)
             # 判断是否追追踪到
             distance_x_this = abs(source_point[0] - track_point[0])
             distance_y_this = abs(source_point[1] - track_point[1])
             distance_this_2 = distance_x_this ** 2 + distance_y_this ** 2
             if distance_this_2 <= threshold_distance and distance <= threshold_distance:
+                df = pd.DataFrame({"file_index": [csv_index], "fly_times": [index], "time_spent": time_track})
+                df.to_csv('opti_times_6.csv', mode='a', index=None, header=None)
                 "track succeed!"
                 return
             distance = distance_this_2
@@ -233,4 +250,5 @@ def track():
 
 if __name__ == '__main__':
     init_rssi()
-    track()
+    for i in range(23, 100):
+        track(i)
